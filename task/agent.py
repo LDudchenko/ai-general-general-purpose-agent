@@ -31,64 +31,65 @@ class GeneralPurposeAgent:
             TOOL_CALL_HISTORY_KEY: []
         }
 
-    async def handle_request(self, deployment_name: str, choice: Choice, request: Request, response: Response) -> Message:
+    async def handle_request(self, deployment_name: str, choice: Choice, request: Request,
+                             response: Response) -> Message:
         client = AsyncDial(base_url=self.endpoint, api_key=request.api_key, api_version=request.api_version)
         content = ""
         tool_call_index_map = {}
 
-        with response.create_single_choice() as choice:
-            chunks = await client.chat.completions.create(deployment_name=deployment_name, stream=True,
-                                                          messages=self._prepare_messages(request.messages),
-                                                          tools=self.tools)
-            async for chunk in chunks:
-                if chunk.choices:
-                    delta = chunk.choices[0].delta
-                    if delta  and delta.content:
-                        choice.append_content(delta.content)
-                        content+=delta.content
-                        if delta.tool_calls:
-                            for tool_call in delta.tool_calls:
-                                if tool_call.id:
-                                    tool_call_index_map[tool_call.index] = tool_call
-                                else:
-                                    existing = tool_call_index_map.get(tool_call.index)
-                                    if tool_call.function:
-                                        arg_chunk = tool_call.function.arguments or ""
-                                        existing.function.arguments += arg_chunk
+        chunks = await client.chat.completions.create(deployment_name=deployment_name, stream=True,
+                                                      messages=self._prepare_messages(request.messages),
+                                                      tools=self.tools)
+        async for chunk in chunks:
+            if chunk.choices:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    choice.append_content(delta.content)
+                    content += delta.content
+                    if delta.tool_calls:
+                        for tool_call in delta.tool_calls:
+                            if tool_call.id:
+                                tool_call_index_map[tool_call.index] = tool_call
+                            else:
+                                existing = tool_call_index_map.get(tool_call.index)
+                                if tool_call.function:
+                                    arg_chunk = tool_call.function.arguments or ""
+                                    existing.function.arguments += arg_chunk
 
-            tool_calls = []
+        tool_calls = []
 
-            for index, tc in tool_call_index_map.items():
-                validated = ToolCall.validate(tc.model_dump())
-                tool_calls.append(validated)
+        for index, tc in tool_call_index_map.items():
+            validated = ToolCall.validate(tc.model_dump())
+            tool_calls.append(validated)
 
-            assistant_message=Message(role=Role.ASSISTANT, content=content, tool_calls=tool_calls)
+        assistant_message = Message(role=Role.ASSISTANT, content=content, tool_calls=tool_calls)
 
-            if assistant_message.tool_calls:
-                conversation_id = request.headers.get("x-conversation-id")
+        if assistant_message.tool_calls:
+            conversation_id = request.headers.get("x-conversation-id")
 
-                tasks = [
-                    self._process_tool_call(tool_call, conversation_id=conversation_id, api_key=request.api_key, choice=choice)
-                    for tool_call in assistant_message.tool_calls
-                ]
+            tasks = [
+                self._process_tool_call(tool_call, conversation_id=conversation_id, api_key=request.api_key,
+                                        choice=choice)
+                for tool_call in assistant_message.tool_calls
+            ]
 
-                tool_messages = await asyncio.gather(*tasks)
+            tool_messages = await asyncio.gather(*tasks)
 
-                self.state[TOOL_CALL_HISTORY_KEY].append(
-                    assistant_message.model_dump(exclude_none=True)
-                )
+            self.state[TOOL_CALL_HISTORY_KEY].append(
+                assistant_message.model_dump(exclude_none=True)
+            )
 
-                self.state[TOOL_CALL_HISTORY_KEY].extend(tool_messages)
+            self.state[TOOL_CALL_HISTORY_KEY].extend(tool_messages)
 
-                return await self.handle_request(
-                    deployment_name=deployment_name,
-                    choice=choice,
-                    request=request,
-                    response=response
-                )
+            return await self.handle_request(
+                deployment_name=deployment_name,
+                choice=choice,
+                request=request,
+                response=response
+            )
 
-            choice.state = self.state
-            return assistant_message
+        choice.state = self.state
+        return assistant_message
 
         #TODO:
         # 1. Create AsyncDial, don't forget to provide endpoint as base_url and api_key. Api_key you can take from `request` as well as api_version

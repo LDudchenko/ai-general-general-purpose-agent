@@ -37,14 +37,14 @@ class GeneralPurposeAgentApplication(ChatCompletion):
 
     async def _create_tools(self) -> list[BaseTool]:
         tools = []
-        tools.extend(
-            [ImageGenerationTool(DIAL_ENDPOINT),
-            FileContentExtractionTool(DIAL_ENDPOINT),
-            RagTool(DIAL_ENDPOINT, DEPLOYMENT_NAME, DocumentCache.create()),
-            PythonCodeInterpreterTool(dial_endpoint=DIAL_ENDPOINT, tool_name="execute_code",
-                                      mcp_client=MCPClient("http://localhost:8050/mcp"), mcp_tool_models=[])]
-        )
-        tools.extend(self._get_mcp_tools("http://localhost:8051/mcp"))
+        # tools.extend(
+        #     [ImageGenerationTool(DIAL_ENDPOINT),
+        #     FileContentExtractionTool(DIAL_ENDPOINT),
+        #     RagTool(DIAL_ENDPOINT, DEPLOYMENT_NAME, DocumentCache.create()),
+        #     PythonCodeInterpreterTool(dial_endpoint=DIAL_ENDPOINT, tool_name="execute_code",
+        #                               mcp_client=MCPClient("http://localhost:8050/mcp"), mcp_tool_models=[])]
+        # )
+        # tools.extend(await self._get_mcp_tools("http://localhost:8051/mcp"))
         return tools
         #TODO:
         # 1. Create list of BaseTool
@@ -61,16 +61,20 @@ class GeneralPurposeAgentApplication(ChatCompletion):
 
     async def chat_completion(self, request: Request, response: Response) -> None:
         if not self.tools:
-            self.tools = self._create_tools()
+            self.tools = await self._create_tools()
         with response.create_single_choice() as choice:
             general_purpose_agent = GeneralPurposeAgent(endpoint=DIAL_ENDPOINT,
                                                         system_prompt=SYSTEM_PROMPT, tools=self.tools)
             await general_purpose_agent.handle_request(choice=choice, deployment_name=DEPLOYMENT_NAME, request=request, response=response)
 
-app=DIALApp(dial_endpoint=DIAL_ENDPOINT, deployment_name=DEPLOYMENT_NAME)
-agent_app=GeneralPurposeAgentApplication()
-app.add_chat_completion(deployment_name="general-purpose-agent", impl=agent_app)
-uvicorn.run(app, port=5030, host="0.0.0.0")
+def main():
+    app=DIALApp(dial_endpoint=DIAL_ENDPOINT, deployment_name=DEPLOYMENT_NAME)
+    agent_app=GeneralPurposeAgentApplication()
+    app.add_chat_completion(deployment_name="general-purpose-agent", impl=agent_app)
+    uvicorn.run(app, port=5030, host="0.0.0.0")
+
+if __name__ == "__main__":
+    main()
 #TODO:
 # 1. Create DIALApp
 # 2. Create GeneralPurposeAgentApplication
