@@ -38,6 +38,7 @@ class GeneralPurposeAgentApplication(ChatCompletion):
     async def _create_tools(self) -> list[BaseTool]:
         tools = []
         tools.append(FileContentExtractionTool(DIAL_ENDPOINT))
+        tools.append(RagTool(DIAL_ENDPOINT, DEPLOYMENT_NAME, DocumentCache.create()))
         # tools.extend(
         #     [ImageGenerationTool(DIAL_ENDPOINT),
         #     FileContentExtractionTool(DIAL_ENDPOINT),
