@@ -25,7 +25,7 @@ class GeneralPurposeAgentApplication(ChatCompletion):
 
     async def _get_mcp_tools(self, url: str) -> list[BaseTool]:
         base_tool_list=[]
-        mcp_client = MCPClient(url)
+        mcp_client = await MCPClient.create(url)
         tools = await mcp_client.get_tools()
         for tool_model in tools:
             mcp_tool = MCPTool(
@@ -47,7 +47,7 @@ class GeneralPurposeAgentApplication(ChatCompletion):
         #     PythonCodeInterpreterTool(dial_endpoint=DIAL_ENDPOINT, tool_name="execute_code",
         #                               mcp_client=MCPClient("http://localhost:8050/mcp"), mcp_tool_models=[])]
         # )
-        # tools.extend(await self._get_mcp_tools("http://localhost:8051/mcp"))
+        tools.extend(await self._get_mcp_tools("http://localhost:8051/mcp"))
         return tools
 
     async def chat_completion(self, request: Request, response: Response) -> None:
