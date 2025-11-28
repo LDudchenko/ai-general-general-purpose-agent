@@ -37,6 +37,7 @@ class GeneralPurposeAgentApplication(ChatCompletion):
 
     async def _create_tools(self) -> list[BaseTool]:
         tools = []
+        tools.append(FileContentExtractionTool(DIAL_ENDPOINT))
         # tools.extend(
         #     [ImageGenerationTool(DIAL_ENDPOINT),
         #     FileContentExtractionTool(DIAL_ENDPOINT),
@@ -46,18 +47,6 @@ class GeneralPurposeAgentApplication(ChatCompletion):
         # )
         # tools.extend(await self._get_mcp_tools("http://localhost:8051/mcp"))
         return tools
-        #TODO:
-        # 1. Create list of BaseTool
-        # ---
-        # At the beginning this list can be empty. We will add here tools after they will be implemented
-        # ---
-        # 2. Add ImageGenerationTool with DIAL_ENDPOINT
-        # 3. Add FileContentExtractionTool with DIAL_ENDPOINT
-        # 4. Add RagTool with DIAL_ENDPOINT, DEPLOYMENT_NAME, and create DocumentCache (it has static method `create`)
-        # 5. Add PythonCodeInterpreterTool with DIAL_ENDPOINT, `http://localhost:8050/mcp` mcp_url, tool_name is
-        #    `execute_code`, more detailed about tools see in repository https://github.com/khshanovskyi/mcp-python-code-interpreter
-        # 6. Extend tools with MCP tools from `http://localhost:8051/mcp` (use method `_get_mcp_tools`)
-
 
     async def chat_completion(self, request: Request, response: Response) -> None:
         if not self.tools:
@@ -75,10 +64,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-#TODO:
-# 1. Create DIALApp
-# 2. Create GeneralPurposeAgentApplication
-# 3. Add to created DIALApp chat_completion with:
-#       - deployment_name="general-purpose-agent"
-#       - impl=agent_app
-# 4. Run it with uvicorn: `uvicorn.run({CREATED_DIAL_APP}, port=5030, host="0.0.0.0")`
