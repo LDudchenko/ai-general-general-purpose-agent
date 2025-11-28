@@ -10,6 +10,17 @@ from task.tools.models import ToolCallParams
 class ImageGenerationTool(DeploymentTool):
 
     async def _execute(self, tool_call_params: ToolCallParams) -> str | Message:
+        result: Message = await super()._execute(tool_call_params)
+        images = [
+            attachment for attachment in (result.custom_content.attachments or [])
+            if attachment.type in ("image/png", "image/jpeg")
+        ]
+        if images:
+            for img in images:
+                result.content = StrictStr(f"\n\n![image]({img.url})\n\n")
+        if not result.content:
+            result.content = StrictStr("The image has been successfully generated according to request and shown to user!")
+        return result
         #TODO:
         # In this override impl we just need to add extra actions, we need to propagate attachment to the Choice since
         # in DeploymentTool they were propagated to the stage only as files. The main goal here is show pictures in chat
@@ -22,28 +33,62 @@ class ImageGenerationTool(DeploymentTool):
         #    'The image has been successfully generated according to request and shown to user!'
         #    Sometimes models are trying to add generated pictures as well to content (choice), with this instruction
         #    we are notifing LLLM that it was done (but anyway sometimes it will try to add file 😅)
-        raise NotImplementedError()
 
     @property
     def deployment_name(self) -> str:
-        # TODO: provide deployment name for model that you have added to DIAL Core config (dall-e-3)
-        raise NotImplementedError()
+        return "dall-e-3"
 
     @property
     def name(self) -> str:
-        # TODO: provide self-descriptive name
-        raise NotImplementedError()
+        return "image_generation"
 
     @property
     def description(self) -> str:
-        # TODO: provide tool description that will help LLM to understand when to use this tools and cover 'tricky'
-        #  moments (not more 1024 chars)
-        raise NotImplementedError()
+        return (
+            """
+            This tool generates images from detailed textual descriptions using the DALL·E 3 model.
+            Use it whenever the user explicitly requests an image, a picture, an illustration, a scene,
+            or visual content.
+            The tool accepts a prompt (required) that describes the image, and optional parameters such as
+            size, quality, and style to customize the result.
+            It returns generated images as attachments and displays them directly in the chat.
+            If a user requests modifications to an image, the tool can also be used for updated generation.
+            """
+        )
+
     @property
     def parameters(self) -> dict[str, Any]:
-        # TODO: provide tool parameters JSON Schema:
-        #  - prompt is string, description: "Extensive description of the image that should be generated.", required
-        #  - there are 3 optional parameters: https://platform.openai.com/docs/guides/image-generation?image-generation-model=dall-e-3#customize-image-output
-        #  - Sample: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/dall-e?tabs=dalle-3#call-the-image-generation-api
-        raise NotImplementedError()
-
+        return {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Extensive description of the image that should be generated."
+                },
+                "size": {
+                    "type": "string",
+                    "description": (
+                        "Optional. The size of the generated image. "
+                        "Valid values: '1024x1024', '1024x1792', '1792x1024'."
+                    ),
+                    "enum": ["1024x1024", "1024x1792", "1792x1024"]
+                },
+                "quality": {
+                    "type": "string",
+                    "description": (
+                        "Optional. Controls image fidelity. "
+                        "Valid values: 'standard', 'hd'."
+                    ),
+                    "enum": ["standard", "hd"]
+                },
+                "style": {
+                    "type": "string",
+                    "description": (
+                        "Optional. Whether the image should be in a 'vivid' artistic style "
+                        "or 'natural' photographic style."
+                    ),
+                    "enum": ["vivid", "natural"]
+                }
+            },
+            "required": ["prompt"]
+        }

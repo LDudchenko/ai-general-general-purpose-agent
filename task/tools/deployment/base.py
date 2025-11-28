@@ -25,6 +25,57 @@ class DeploymentTool(BaseTool, ABC):
         return {}
 
     async def _execute(self, tool_call_params: ToolCallParams) -> str | Message:
+        args = json.loads(tool_call_params.tool_call.function.arguments)
+
+        prompt = args.get("prompt")
+
+        custom_fields = {k: v for k, v in args.items() if k != "prompt"}
+
+        stage = tool_call_params.stage
+        stage.append_content("## Request arguments:\n")
+        stage.append_content(f"**Prompt:** {prompt}\n\r")
+
+        if custom_fields:
+            stage.append_content(f"**Custom fields:** `{json.dumps(custom_fields)}`\n\r")
+
+        client = AsyncDial(
+            base_url=self.endpoint,
+            api_key=tool_call_params.api_key,
+        )
+
+        messages = [{"role": "user", "content": prompt}]
+
+        collected_output = ""
+        attachments = []
+
+        stage.append_content("## Response:\n")
+
+        async for event in await client.chat.completions.create(
+                deployment_name=self.deployment_name,
+                api_version="2025-01-01-preview",
+                messages=messages,
+                stream=True,
+                extra_body={"custom_fields": custom_fields},
+                **self.tool_parameters
+        ):
+            if event.type == "chat.completion.chunk":
+                delta = event.delta or ""
+                if delta:
+                    collected_output += delta
+                    stage.append_content(delta)
+
+            if event.type == "chat.completion.message":
+                if event.custom_content:
+                    attachments.extend(event.custom_content)
+                    stage.add_attachment(event.custom_content)
+
+        return Message(
+            role=Role.TOOL,
+            content=collected_output,
+            custom_content=attachments,
+            tool_call_id=tool_call_params.tool_call.id
+        )
+
         #TODO:
         # 1. Load arguments with `json`
         # 2. Get `prompt` from arguments (by default we provide `prompt` for each deployment tool, use this param name as standard)
@@ -42,4 +93,3 @@ class DeploymentTool(BaseTool, ABC):
         # 6. Collect content and it to stage, also, collect custom_content -> attachments and if they are present add
         #    them to stage as attachment as well
         # 7. Return Message with tool role, content, custom_content and tool_call_id
-        raise NotImplementedError()
