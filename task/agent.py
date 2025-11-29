@@ -3,7 +3,7 @@ import json
 from typing import Any
 
 from aidial_client import AsyncDial
-from aidial_client.types.chat.legacy.chat_completion import CustomContent, ToolCall
+from aidial_client.types.chat.legacy.chat_completion import ToolCall
 from aidial_sdk.chat_completion import Message, Role, Choice, Request, Response
 
 from task.tools.base import BaseTool
@@ -69,27 +69,21 @@ class GeneralPurposeAgent:
             if not delta:
                 continue
 
-            # --- TEXT CONTENT ---
             if delta.content:
-                print("CONTENT DELTA:", delta.content)
                 choice.append_content(delta.content)
                 content += delta.content
 
-            # --- TOOL CALLS ---
             if delta.tool_calls:
                 for tool_call_delta in delta.tool_calls:
                     idx = tool_call_delta.index
 
-                    # First time seeing this tool call → store it
                     if tool_call_delta.id:
                         tool_call_index_map[idx] = tool_call_delta
                         print(f"REGISTER TOOL CALL {idx}: {tool_call_delta}")
                         continue
 
-                    # Subsequent chunks (arguments come in pieces)
                     existing = tool_call_index_map.get(idx)
                     if not existing:
-                        # Recover from out-of-order chunk
                         print(f"WARNING: tool call chunk arrived before init, creating stub for index {idx}")
                         tool_call_index_map[idx] = tool_call_delta
                         existing = tool_call_delta
@@ -100,9 +94,7 @@ class GeneralPurposeAgent:
                             existing.function.arguments = ""
                         existing.function.arguments += arg_chunk
 
-                        print(f"ARG CHUNK ADDED TO {idx}: {arg_chunk}")
 
-        # Convert to validated ToolCall objects
         tool_calls = [
             ToolCall.validate(tc.model_dump())
             for tc in tool_call_index_map.values()
@@ -114,7 +106,6 @@ class GeneralPurposeAgent:
             tool_calls=tool_calls
         )
 
-        # --- TOOL CALL FLOW ---
         if assistant_message.tool_calls:
             conversation_id = request.headers.get("x-conversation-id")
 
@@ -135,7 +126,6 @@ class GeneralPurposeAgent:
             )
             self.state[TOOL_CALL_HISTORY_KEY].extend(tool_messages)
 
-            # Recursive call to process next model response
             return await self.handle_request(
                 deployment_name=deployment_name,
                 choice=choice,
@@ -143,7 +133,6 @@ class GeneralPurposeAgent:
                 response=response
             )
 
-        # No tool calls → final response
         choice.state = self.state
         return assistant_message
 
