@@ -62,12 +62,7 @@ class GeneralPurposeAgent:
         )
 
         async for chunk in chunks:
-            if not chunk.choices:
-                continue
-
             delta = chunk.choices[0].delta
-            if not delta:
-                continue
 
             if delta.content:
                 choice.append_content(delta.content)
@@ -76,15 +71,12 @@ class GeneralPurposeAgent:
             if delta.tool_calls:
                 for tool_call_delta in delta.tool_calls:
                     idx = tool_call_delta.index
-
                     if tool_call_delta.id:
                         tool_call_index_map[idx] = tool_call_delta
-                        print(f"REGISTER TOOL CALL {idx}: {tool_call_delta}")
                         continue
 
                     existing = tool_call_index_map.get(idx)
                     if not existing:
-                        print(f"WARNING: tool call chunk arrived before init, creating stub for index {idx}")
                         tool_call_index_map[idx] = tool_call_delta
                         existing = tool_call_delta
 
