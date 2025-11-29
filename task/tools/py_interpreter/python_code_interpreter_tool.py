@@ -80,19 +80,11 @@ class PythonCodeInterpreterTool(BaseTool):
             stage.append_content("New session will be created\n\r")
         stage.append_content("## Response: \n")
 
-        # --- EXECUTE CODE ---
         content = await self._mcp_client.call_tool(self.name, arguments)
 
         execution_result_json = json.loads(content)
         execution_result = _ExecutionResult.model_validate(execution_result_json)
 
-        execution_result.files = [
-            f for f in execution_result.files
-            if not f.uri.startswith("kernel://")
-        ]
-        #
-
-        # --- FILES HANDLING ---
         if execution_result.files:
             dial_client = Dial(
                 base_url=self.dial_endpoint,
@@ -100,21 +92,18 @@ class PythonCodeInterpreterTool(BaseTool):
             )
 
             files_home = dial_client.my_appdata_home()
-
             for file in execution_result.files:
                 name = file.name
                 mime_type = file.mime_type
 
                 resource_bytes = await self._mcp_client.get_resource(AnyUrl(file.uri))
 
-                # text files
                 if mime_type.startswith('text/') or mime_type in ['application/json', 'application/xml']:
                     if isinstance(resource_bytes, bytes):
                         file_data = resource_bytes.decode('utf-8').encode('utf-8')
                     else:
                         file_data = resource_bytes.encode('utf-8')
 
-                # binary files
                 else:
                     if isinstance(resource_bytes, str):
                         file_data = base64.b64decode(resource_bytes)
@@ -135,16 +124,13 @@ class PythonCodeInterpreterTool(BaseTool):
                 stage.add_attachment(attachment)
                 tool_call_params.choice.add_attachment(attachment)
 
-            execution_result_json[
-                "instructions"] = "Generated files have been provided to user, DON'T include links to them in response!"
+            execution_result_json["instructions"] = "Generated files have been provided to user, DON'T include links to them in response!"
 
-        # --- TRIM OUTPUT ---
         if execution_result.output:
             if isinstance(execution_result.output, list):
                 execution_result.output = [o[:200] for o in execution_result.output]
             else:
-                execution_result.output = str(execution_result.output)[:200]
-
+                execution_result.output = [str(execution_result.output)[:200]]
         stage.append_content(f"```json\n\r{execution_result.model_dump_json(indent=2)}\n\r```\n\r")
 
         return StrictStr(execution_result.model_dump_json())

@@ -28,8 +28,6 @@ class FileContentExtractionTool(BaseTool):
 
     @property
     def description(self) -> str:
-        # TODO: provide tool description that will help LLM to understand when to use this tools and cover 'tricky'
-        #  moments (not more 1024 chars)
         return """
         This tool extracts readable text or table data from user-provided files. 
         Use it whenever the user asks questions that require reading or analyzing the content of a file. 
@@ -91,29 +89,3 @@ class FileContentExtractionTool(BaseTool):
         stage.append_content(f"```text\n\r{content}\n\r```\n\r")
 
         return content
-
-        #TODO:
-        # 1. Load arguments with `json`
-        # 2. Get `file_url` from arguments
-        # 3. Get `page` from arguments (if none, set as 1 by default)
-        # 4. Get stage from `tool_call_params`
-        # 5. Append content to stage: "## Request arguments: \n"
-        # 6. Append content to stage: `f"**File URL**: {file_url}\n\r"`
-        # 7. If `page` more than 1 then append content to stage: `f"**Page**: {page}\n\r"`
-        # 8. Append content to stage: "## Response: \n"
-        # 9. Implement `task.utils.dial_file_conent_extractor`, create DialFileContentExtractor and call `extract_text`
-        #    method as `content`
-        # 10. If no `content` present then set it as "Error: File content not found."
-        # 11. If `content` len is more than 10_000 then we need to enable pagination:
-        #       - create variable `page_size` as 10_000
-        #       - calculate total pages, formula: (`content len` + `page_size` - 1) // `page_size`
-        #       - if `page` is less then 1 (potential hallucination from LLM) then set it as 1
-        #       - otherwise check if page > total pages (potential hallucination), it yes then set `content` as
-        #         `f"Error: Page {page} does not exist. Total pages: {total_pages}"`
-        #       - prepare `start_index`: `(page - 1) * page_size`
-        #       - prepare `end_index`: `start_index + page_size`
-        #       - get page content from `content` that will start with `start_index` and end with `end_index`
-        #       - set `content` as `f"{page_content}\n\n**Page #{page}. Total pages: {total_pages}**"` (It will show to
-        #         LLM that it is not full content and it is pageable)
-        # 12. Append content to stage: `f"```text\n\r{content}\n\r```\n\r"` (Will be shown in stage as markdown text)
-        # 13. Return `content`

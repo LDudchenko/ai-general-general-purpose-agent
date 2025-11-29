@@ -36,13 +36,7 @@ class MCPClient:
         self.session = await self._session_context.__aenter__()
         result = await self.session.initialize()
         print(result)
-        #TODO:
-        # 1. Check if session is present, if yes just return to finsh execution
-        # 2. Call `streamablehttp_client` method with `server_url` and set as `self._streams_context`
-        # 3. Enter `self._streams_context`, result set as `read_stream, write_stream, _`
-        # 4. Create ClientSession with streams from above and set as `self._session_context`
-        # 5. Enter `self._session_context` and set as self.session
-        # 6. Initialize session and print its result to console
+
 
 
     async def get_tools(self) -> list[MCPToolModel]:
@@ -61,23 +55,21 @@ class MCPClient:
             raise Exception("MCP client is not connected to MCP server")
         print(f"Call to MCP server: tool_name - {tool_name}, tool_args - {tool_args}, url - {self.server_url}")
         result: CallToolResult = await self.session.call_tool(tool_name, tool_args)
-        result_content = result.content
-        if isinstance(result_content[0], TextContent):
-            return result_content[0].text
+        result_content = result.content[0]
+        if isinstance(result_content, TextContent):
+            return result_content.text
         else:
             return result_content
-        #TODO: Make tool call and return its result. Do it in proper way (it returns array of content and you need to handle it properly)
 
     async def get_resource(self, uri: AnyUrl) -> str | bytes:
         """Get specific resource content"""
         if not self.session:
             raise Exception("MCP client is not connected to MCP server")
         result = await self.session.read_resource(uri)
-        if isinstance(result, BlobResourceContents):
-            return result.blob
+        content = result.contents[0]
+        if isinstance(content, BlobResourceContents):
+            return content.blob
         return result.text
-        #TODO: Get and return resource. Resources can be returned as TextResourceContents and BlobResourceContents, you
-        #      need to return resource value (text or blob)
 
     async def close(self):
         """Close connection to MCP server"""
@@ -86,10 +78,6 @@ class MCPClient:
         self.session = None
         self._session_context = None
         self._streams_context = None
-        #TODO:
-        # 1. Close `self._session_context`
-        # 2. Close `self._streams_context`
-        # 3. Set session, _session_context and _streams_context as None
 
     async def __aenter__(self):
         """Async context manager entry"""

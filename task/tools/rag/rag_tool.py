@@ -13,8 +13,14 @@ from task.tools.models import ToolCallParams
 from task.tools.rag.document_cache import DocumentCache
 from task.utils.dial_file_conent_extractor import DialFileContentExtractor
 
-# TODO: provide system prompt for Generation step
 _SYSTEM_PROMPT = """
+Use the following document context to answer the question.
+
+Context:
+{context_text}
+
+Question: 
+{request}
 """
 
 
@@ -38,20 +44,6 @@ class RagTool(BaseTool):
             length_function=len,
             separators=["\n\n", "\n", ". ", " ", ""]
         )
-        #TODO:
-        # 1. Set endpoint
-        # 2. Set deployment_name
-        # 3. Set document_cache. DocumentCache is implemented, relate to it as to centralized Dict with file_url (as key),
-        #    and indexed embeddings (as value), that have some autoclean. This cache will allow us to speed up RAG search.
-        # 4. Create SentenceTransformer and set is as `model` with:
-        #   - model_name_or_path='all-MiniLM-L6-v2', it is self hosted lightwait embedding model.
-        #     More info: https://medium.com/@rahultiwari065/unlocking-the-power-of-sentence-embeddings-with-all-minilm-l6-v2-7d6589a5f0aa
-        #   - Optional! You can set it use CPU forcefully with `device='cpu'`, in case if not set up then will use GPU if it has CUDA cores
-        # 5. Create RecursiveCharacterTextSplitter as `text_splitter` with:
-        #   - chunk_size=500
-        #   - chunk_overlap=50
-        #   - length_function=len
-        #   - separators=["\n\n", "\n", ". ", " ", ""]
 
     @property
     def show_in_stage(self) -> bool:
@@ -146,5 +138,8 @@ class RagTool(BaseTool):
 
     def __augmentation(self, request: str, chunks: list[str]) -> str:
         context_text = "\n\n---\n\n".join(chunks)
-        prompt = f"Use the following document context to answer the question.\n\nContext:\n{context_text}\n\nQuestion: {request}\nAnswer:"
+        prompt = _SYSTEM_PROMPT.format(
+            context_text=context_text,
+            request=request
+        )
         return prompt
