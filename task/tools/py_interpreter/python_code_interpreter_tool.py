@@ -14,11 +14,6 @@ from task.tools.models import ToolCallParams
 
 
 class PythonCodeInterpreterTool(BaseTool):
-    """
-    Uses https://github.com/khshanovskyi/mcp-python-code-interpreter PyInterpreter MCP Server.
-
-    ⚠️ Pay attention that this tool will wrap all the work with PyInterpreter MCP Server.
-    """
 
     def __init__(
             self,
@@ -27,23 +22,16 @@ class PythonCodeInterpreterTool(BaseTool):
             tool_name: str,
             dial_endpoint: str,
     ):
-        """
-        :param tool_name: it must be actual name of tool that executes code. It is 'execute_code'.
-            https://github.com/khshanovskyi/mcp-python-code-interpreter/blob/main/interpreter/server.py#L303
-        """
         self.dial_endpoint = dial_endpoint
-        self.mcp_client = mcp_client
-        self._code_execute_tool = None
-        for tool in mcp_tool_models:
-            if tool.name == tool_name:
-                self._code_execute_tool = tool
-                break
+        self._mcp_client = mcp_client
 
-        if self._code_execute_tool is None:
-            raise ValueError(
-                f"Cannot initialize PythonCodeInterpreterTool: "
-                f"tool with name '{tool_name}' not found among MCP tools."
-            )
+        self._code_execute_tool: Optional[MCPToolModel] = None
+        for mcp_tool_model in mcp_tool_models:
+            if mcp_tool_model.name == tool_name:
+                self._code_execute_tool = mcp_tool_model
+
+        if not self._code_execute_tool:
+            raise ValueError(f"MCP with PythonCodeInterpreterTool doesn't have `{tool_name}` tool")
 
     @classmethod
     async def create(
@@ -52,15 +40,11 @@ class PythonCodeInterpreterTool(BaseTool):
             tool_name: str,
             dial_endpoint: str,
     ) -> 'PythonCodeInterpreterTool':
-        """Async factory method to create PythonCodeInterpreterTool"""
-        mcp_client = MCPClient(mcp_url)
-        await mcp_client.connect()
-
-        mcp_tool_models = await mcp_client.get_tools()
-
+        mcp_client = await MCPClient.create(mcp_url)
+        tools = await mcp_client.get_tools()
         return cls(
             mcp_client=mcp_client,
-            mcp_tool_models=mcp_tool_models,
+            mcp_tool_models=tools,
             tool_name=tool_name,
             dial_endpoint=dial_endpoint,
         )
@@ -71,9 +55,7 @@ class PythonCodeInterpreterTool(BaseTool):
 
     @property
     def name(self) -> str:
-        tool_name = self._code_execute_tool.name
-        print(tool_name)
-        return tool_name
+        return self._code_execute_tool.name
 
     @property
     def description(self) -> str:
@@ -84,84 +66,85 @@ class PythonCodeInterpreterTool(BaseTool):
         return self._code_execute_tool.parameters
 
     async def _execute(self, tool_call_params: ToolCallParams) -> str | Message:
-        args = json.loads(tool_call_params.tool_call.function.arguments)
-        code = args["code"]
-        session_id = args.get("session_id")
+        arguments = json.loads(tool_call_params.tool_call.function.arguments)
         stage = tool_call_params.stage
+
         stage.append_content("## Request arguments: \n")
-        stage.append_content("""```python\n\r{code}\n\r```\n""")
+        code = arguments["code"]
+        session_id = arguments.get("session_id")
+
+        stage.append_content(f"```python\n\r{code}\n\r```\n\r")
         if session_id:
             stage.append_content(f"**session_id**: {session_id}\n\r")
         else:
             stage.append_content("New session will be created\n\r")
+        stage.append_content("## Response: \n")
 
-        result = await self.mcp_client.call_tool(tool_call_params.tool_call.function.name, args)
-        print("RAW RESULT:", result)
-        result_json = json.loads(result)
-        execution_result = _ExecutionResult(**result_json)
+        # --- EXECUTE CODE ---
+        content = await self._mcp_client.call_tool(self.name, arguments)
+
+        execution_result_json = json.loads(content)
+        execution_result = _ExecutionResult.model_validate(execution_result_json)
+
+        execution_result.files = [
+            f for f in execution_result.files
+            if not f.uri.startswith("kernel://")
+        ]
+        #
+
+        # --- FILES HANDLING ---
         if execution_result.files:
-            attachments = []
+            dial_client = Dial(
+                base_url=self.dial_endpoint,
+                api_key=tool_call_params.api_key,
+            )
 
-            if execution_result.files:
-                dial = Dial(base_url=self.dial_endpoint)
-                files_home = dial.my_appdata_home()
+            files_home = dial_client.my_appdata_home()
 
-                for file in execution_result.files:
-                    file_name = file.name
-                    mime_type = file.mime_type
-                    resource_url = file.url
+            for file in execution_result.files:
+                name = file.name
+                mime_type = file.mime_type
 
-                    resource = await self.mcp_client.get_resource(resource_url)
+                resource_bytes = await self._mcp_client.get_resource(AnyUrl(file.uri))
 
-                    if mime_type.startswith("text/") or mime_type in (
-                            "application/json", "application/xml"
-                    ):
-                        data_bytes = resource.encode("utf-8")
+                # text files
+                if mime_type.startswith('text/') or mime_type in ['application/json', 'application/xml']:
+                    if isinstance(resource_bytes, bytes):
+                        file_data = resource_bytes.decode('utf-8').encode('utf-8')
                     else:
-                        data_bytes = base64.b64decode(resource)
+                        file_data = resource_bytes.encode('utf-8')
 
-                    upload_path = f"files/{(files_home / file_name).as_posix()}"
-                    await dial.files.upload(url=upload_path, file=data_bytes)
+                # binary files
+                else:
+                    if isinstance(resource_bytes, str):
+                        file_data = base64.b64decode(resource_bytes)
+                    else:
+                        file_data = resource_bytes
 
-                    attachment = Attachment(
-                        url=upload_path,
-                        type=mime_type,
-                        title=file_name
-                    )
+                upload_path = files_home / name
+                url = f"files/{upload_path.as_posix()}"
 
-                    attachments.append(attachment)
-                    stage.add_attachment(attachment)
-                    tool_call_params.choice.add_attachment(attachment)
+                dial_client.files.upload(url=url, file=file_data)
 
-                execution_result.attachments = [a.model_dump() for a in attachments]
+                attachment = Attachment(
+                    url=StrictStr(url),
+                    type=StrictStr(mime_type),
+                    title=StrictStr(name)
+                )
 
-            if execution_result.output:
-                for chunk in execution_result.output:
-                    if chunk.text:
-                        chunk.text = chunk.text[:1000]
+                stage.add_attachment(attachment)
+                tool_call_params.choice.add_attachment(attachment)
 
-            json_dump = execution_result.model_dump_json(indent=2)
-            stage.append_content(f"```json\n{json_dump}\n```\n")
+            execution_result_json[
+                "instructions"] = "Generated files have been provided to user, DON'T include links to them in response!"
 
-            return json_dump
-        #TODO:
-        # 10. Validate result with _ExecutionResult (it is full copy of https://github.com/khshanovskyi/mcp-python-code-interpreter/blob/main/interpreter/models.py)
-        # 11. If execution_result contains files we need to pool files from PyInterpreter and upload them to DIAL bucked:
-        #       - Create Dial client
-        #       - Get with client `my_appdata_home` path as `files_home`
-        #       - Iterated through files and:
-        #           - get file name and mime_type and assign to appropriate variables
-        #           - get resource with mcp client by URL from file (https://github.com/khshanovskyi/mcp-python-code-interpreter/blob/main/interpreter/server.py#L429)
-        #           - according to MCP binary resources must be encoded with base64 https://modelcontextprotocol.io/specification/2025-06-18/server/resources#binary-content
-        #             Check if mime_type starts with `text/` or some of 'application/json', 'application/xml', is yes
-        #             then encode resource with 'utf-8' format (text will be present as bytes to upload to DIAL bucket).
-        #             Otherwise (binary file) decode it with `b64decode`
-        #           - Prepare URL to upload downloaded file: file"files/{(files_home / file_name).as_posix()}"
-        #           - Upload file with DIAL client
-        #           - Prepare Attachment with url, type (mime_type), and title (file_name)
-        #           - Add attachment to stage and also add this attachment to choice (it will be chown in both stage and choice)
-        #       - Add to execution_result json addition
-        # 12. Check if execution_result output present and if yes iterate through all output results and cut it length
-        #     to 1000 chars, it is needed to avoid high costs and context window overload
-        # 13. Append to stage response file"```json\n\r{execution_result.model_dump_json(indent=2)}\n\r```\n\r"
-        # 14. Return execution result as string (model_dump_json method)
+        # --- TRIM OUTPUT ---
+        if execution_result.output:
+            if isinstance(execution_result.output, list):
+                execution_result.output = [o[:200] for o in execution_result.output]
+            else:
+                execution_result.output = str(execution_result.output)[:200]
+
+        stage.append_content(f"```json\n\r{execution_result.model_dump_json(indent=2)}\n\r```\n\r")
+
+        return StrictStr(execution_result.model_dump_json())
