@@ -67,9 +67,9 @@ class DeploymentTool(BaseTool, ABC):
                         collected_output += delta.content
                     if delta.custom_content and delta.custom_content.attachments:
                         attachments = delta.custom_content.attachments
+                        attachments.extend(attachments)
 
                         for attachment in attachments:
-                            attachments.append(attachment)
                             tool_call_params.stage.add_attachment(
                                 type=attachment.type,
                                 title=attachment.title,
