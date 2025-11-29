@@ -22,7 +22,6 @@ class BaseTool(ABC):
                 tool_message.content = StrictStr(str(result))
 
         except Exception as e:
-            print(e)
             tool_message.content = StrictStr(f"Tool execution error: {str(e)}")
         return tool_message
 

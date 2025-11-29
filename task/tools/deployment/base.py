@@ -41,6 +41,7 @@ class DeploymentTool(BaseTool, ABC):
         client = AsyncDial(
             base_url=self.endpoint,
             api_key=tool_call_params.api_key,
+            api_version='2025-01-01-preview'
         )
 
         messages = [{"role": "user", "content": prompt}]
@@ -58,38 +59,29 @@ class DeploymentTool(BaseTool, ABC):
                 extra_body={"custom_fields": custom_fields},
                 **self.tool_parameters
         ):
-            if event.type == "chat.completion.chunk":
-                delta = event.delta or ""
+            if event.choices:
+                delta = event.choices[0].delta
                 if delta:
-                    collected_output += delta
-                    stage.append_content(delta)
+                    if delta.content:
+                        tool_call_params.stage.append_content(delta.content)
+                        collected_output += delta.content
+                    if delta.custom_content and delta.custom_content.attachments:
+                        attachments = delta.custom_content.attachments
+                        attachments.extend(attachments)
 
-            if event.type == "chat.completion.message":
-                if event.custom_content:
-                    attachments.extend(event.custom_content)
-                    stage.add_attachment(event.custom_content)
+                        for attachment in attachments:
+                            tool_call_params.stage.add_attachment(
+                                type=attachment.type,
+                                title=attachment.title,
+                                data=attachment.data,
+                                url=attachment.url,
+                                reference_url=attachment.reference_url,
+                                reference_type=attachment.reference_type,
+                            )
 
         return Message(
             role=Role.TOOL,
-            content=collected_output,
-            custom_content=attachments,
-            tool_call_id=tool_call_params.tool_call.id
+            content=StrictStr(collected_output),
+            custom_content=CustomContent(attachments=attachments),
+            tool_call_id=StrictStr(tool_call_params.tool_call.id)
         )
-
-        #TODO:
-        # 1. Load arguments with `json`
-        # 2. Get `prompt` from arguments (by default we provide `prompt` for each deployment tool, use this param name as standard)
-        # 3. Delete `prompt` from `arguments` (there can be provided additional parameters and `prompt` will be added
-        #    as user message content and other parameters as `custom_fields`)
-        # 4. Create AsyncDial client (api_version is 2025-01-01-preview)
-        # 5. Call chat completions with:
-        #   - messages (here will be just user message. Optionally, in this class you can add system prompt `property`
-        #     and if any deployment tool provides system prompt then we need to set it as first message (system prompt))
-        #   - stream it
-        #   - deployment_name
-        #   - extra_body with `custom_fields` https://dialx.ai/dial_api#operation/sendChatCompletionRequest (last request param in documentation)
-        #   - **self.tool_parameters (will load all tool parameters that were set up in deployment tools as params, like
-        #     `top_p`, `temperature`, etc...)
-        # 6. Collect content and it to stage, also, collect custom_content -> attachments and if they are present add
-        #    them to stage as attachment as well
-        # 7. Return Message with tool role, content, custom_content and tool_call_id

@@ -15,9 +15,9 @@ class ImageGenerationTool(DeploymentTool):
             attachment for attachment in (result.custom_content.attachments or [])
             if attachment.type in ("image/png", "image/jpeg")
         ]
-        if images:
-            for img in images:
-                result.content = StrictStr(f"\n\n![image]({img.url})\n\n")
+        for img in images:
+            print(f"IMAGE URL: {img.url}")
+            tool_call_params.choice.append_content(f"\n\r![image]({img.url})\n\r")
         if not result.content:
             result.content = StrictStr("The image has been successfully generated according to request and shown to user!")
         return result
